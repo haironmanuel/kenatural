@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateFeed,demoGyms} from '../data.js';
+const valid=()=>({...demoGyms[0],observedAt:new Date().toISOString(),source:'Contador autorizado'});
+test('el feed conectado no conserva la marca de demostración',()=>{assert.equal(validateFeed({gyms:[valid()]})[0].demo,false);});
+test('rechaza conteos negativos y capacidades inválidas',()=>{for(const patch of [{people:-1},{people:2.5},{capacity:0}])assert.throws(()=>validateFeed({gyms:[{...valid(),...patch}]}));});
+test('rechaza fechas inválidas o futuras',()=>{for(const observedAt of ['ayer',new Date(Date.now()+3600000).toISOString()])assert.throws(()=>validateFeed({gyms:[{...valid(),observedAt}]}));});
+test('permite fechas antiguas para identificarlas como desactualizadas',()=>{assert.equal(validateFeed({gyms:[{...valid(),observedAt:'2020-01-01T00:00:00Z'}]}).length,1);});
+test('rechaza IDs y horas duplicadas',()=>{assert.throws(()=>validateFeed({gyms:[valid(),valid()]}));assert.throws(()=>validateFeed({gyms:[{...valid(),hourly:[{hour:6,occupancy:20},{hour:6,occupancy:40}]}]}));});
+test('rechaza porcentajes históricos inválidos y fuentes sin atribución',()=>{assert.throws(()=>validateFeed({gyms:[{...valid(),hourly:[{hour:25,occupancy:120}]}]}));assert.throws(()=>validateFeed({gyms:[{...valid(),source:''}]}));});
+test('los ejemplos se identifican como ficticios y no inventan fechas de medición',()=>{assert.equal(demoGyms.length,6);assert.ok(demoGyms.every(g=>g.demo&&g.observedAt===null&&g.source==='Ejemplo ficticio'));});
