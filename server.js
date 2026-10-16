@@ -2,11 +2,19 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {demoGyms,validateFeed} from './data.js';
+import {fileURLToPath} from 'node:url';
+import {createAuth} from './auth.js';
+import {createStore} from './auth-store.js';
 const root=resolve('public');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
-http.createServer(async(req,res)=>{
+export function createApplication({store, production = false, publicOrigin, rateLimit} = {}) {
+const auth = createAuth({store, production, publicOrigin, rateLimit});
+return http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
+  res.setHeader('X-Content-Type-Options','nosniff');
+  res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
+  if(await auth(req,res,path,json)) return;
   if(req.method!=='GET'){res.writeHead(405);return res.end();}
   if(path==='/api/gyms'){
     if(!process.env.GYM_DATA_URL) return json(res,200,{mode:'demo',gyms:demoGyms});
@@ -26,4 +34,17 @@ http.createServer(async(req,res)=>{
     const content=await readFile(file);
     res.writeHead(200,{'Content-Type':types[extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'Cache-Control':'no-cache'});res.end(content);
   }catch{res.writeHead(404);res.end('No encontrado');}
-}).listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log(`GymHora RD: puerto ${process.env.PORT||3000}`));
+});
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const production = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+  let store;
+  try { store = await createStore({production}); }
+  catch { console.warn('Cuentas no disponibles: configura una DATABASE_URL PostgreSQL válida. La exploración sigue disponible.'); }
+  const app = createApplication({store, production, publicOrigin: process.env.PUBLIC_ORIGIN});
+  app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log(`GymHora RD: puerto ${process.env.PORT||3000}`));
+  for (const signal of ['SIGTERM','SIGINT']) process.on(signal, () => {
+    app.close(async () => { await store?.close(); process.exit(0); });
+  });
+}

@@ -2,7 +2,7 @@
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#142c26"><meta name="description" content="Encuentra tu mejor momento para entrenar en República Dominicana. Consulta ocupación y horas pico con fuentes identificadas."><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/icon.svg"><link rel="stylesheet" href="/style.css"><title>GymHora RD · Tu mejor momento para entrenar</title></head>
 <body>
 <aside class="sidebar"><a class="brand" href="/" aria-label="GymHora RD, inicio"><span class="brand-icon">G<span>↗</span></span><span>gymhora<span class="brand-rd">RD</span></span></a><div class="nav-label">TU ENTRENAMIENTO, A TU RITMO</div><nav aria-label="Principal"><button id="explore" class="nav-item active"><span>◫</span> Explorar gimnasios</button><button id="favorites" class="nav-item"><span>♡</span> Mis favoritos <b id="fav-count">0</b></button></nav><div class="sidebar-bottom"><div class="island">☀</div><strong>Menos espera.<br>Más entrenamiento.</strong><p>Encuentra el momento<br>que funciona para ti.</p><button class="install-button" id="install">↓ Instalar aplicación</button><small>Gratis · Sin crear una cuenta</small></div><div class="country"><span class="flag">🇩🇴</span> Hecho para República Dominicana</div></aside>
-<div class="shell"><header><span class="breadcrumb">Descubre tu próximo entrenamiento</span><div class="header-actions"><span class="time" id="local-time"></span><button class="mobile-install" id="install-mobile">↓ Instalar</button><button class="round-button" id="about" aria-label="Información de los datos">?</button></div></header>
+<div class="shell"><header><span class="breadcrumb">Descubre tu próximo entrenamiento</span><div class="header-actions"><span class="time" id="local-time"></span><button class="account-button" id="account-button">Iniciar sesión</button><button class="mobile-install" id="install-mobile">↓ Instalar</button><button class="round-button" id="about" aria-label="Información de los datos">?</button></div></header>
 <main><section class="intro"><div><div class="eyebrow"><span></span> MUÉVETE A TU RITMO</div><h1>Tu gym. Tu momento.</h1><p>Evita las horas pico. Encuentra espacio para darlo todo.</p></div><button class="export" id="export">↓ <span>Descargar datos</span></button></section>
 <div id="data-notice" class="notice"><span class="notice-icon">i</span><p><strong>Estás explorando una demostración.</strong> Los gimnasios y conteos son ficticios. No representan asistencia real.</p><button id="source-info">Sobre los datos ↗</button></div>
 <div id="error" class="error" role="alert" hidden></div>
@@ -12,4 +12,32 @@
 <footer><span>gymhora RD <span class="footer-dot">·</span> Entrena con más espacio.</span><span>Hora local: America/Santo_Domingo</span></footer></main></div>
 <dialog id="details"><div id="detail-body"></div><button class="dialog-close" id="close-details" aria-label="Cerrar detalle">×</button></dialog>
 <dialog id="info"><button class="dialog-close" id="close-info" aria-label="Cerrar información">×</button><div class="eyebrow">DATOS CON TRANSPARENCIA</div><h2 id="info-title">Lo que ves en GymHora</h2><div id="info-body"></div><button class="primary" id="info-ok">Entendido</button></dialog>
+<dialog id="account-dialog" aria-labelledby="auth-title">
+<button class="dialog-close" id="close-account" aria-label="Cerrar cuenta">×</button>
+<div class="eyebrow">TU ESPACIO EN GYMHORA</div>
+<h2 id="auth-title">Qué bueno verte de nuevo</h2>
+<p id="auth-subtitle">Guarda tus favoritos y llévalos contigo en cada dispositivo.</p>
+<div id="auth-tabs" class="auth-tabs" aria-label="Acceso a tu cuenta"><button id="tab-login" class="selected" type="button" aria-pressed="true">Iniciar sesión</button><button id="tab-register" type="button" aria-pressed="false">Crear cuenta</button></div>
+<p id="auth-availability" class="account-notice" role="status" hidden></p>
+<form id="credentials-form" class="account-form">
+<div id="register-fields" hidden><label for="auth-name">Tu nombre</label><input id="auth-name" name="name" autocomplete="name" minlength="2" maxlength="80" placeholder="¿Cómo te llamas?"></div>
+<div><label for="auth-email">Correo electrónico</label><input id="auth-email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="tu@correo.com"></div>
+<div><label for="auth-password">Contraseña</label><div class="password-input"><input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required aria-describedby="password-help"><button id="password-toggle" type="button" aria-pressed="false" aria-controls="auth-password">Mostrar</button></div><small id="password-help">Entre 10 y 128 caracteres. Usa una contraseña única.</small></div>
+<div id="confirm-field" hidden><label for="auth-confirm">Confirma tu contraseña</label><input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" minlength="10" maxlength="128"></div>
+<p id="auth-error" class="form-message" role="status" aria-live="polite"></p>
+<button class="primary" id="auth-submit" type="submit">Iniciar sesión</button>
+<p class="account-privacy">Tu perfil es privado. Tus favoritos de invitado permanecen separados de los favoritos de tu cuenta.</p>
+</form>
+<section id="profile-panel" hidden>
+<div class="profile-heading"><span id="profile-initial" aria-hidden="true"></span><div><strong id="profile-email"></strong><p id="profile-count"></p></div></div>
+<form id="profile-form" class="account-form">
+<div><label for="profile-name">Nombre</label><input id="profile-name" name="name" autocomplete="name" minlength="2" maxlength="80" required></div>
+<div><label for="profile-city">Ciudad</label><input id="profile-city" name="city" autocomplete="address-level2" maxlength="80" placeholder="Por ejemplo, Santo Domingo"></div>
+<p id="profile-status" class="form-message" role="status" aria-live="polite"></p>
+<button class="primary" id="profile-save" type="submit">Guardar perfil</button>
+</form>
+<button class="logout-button" id="logout" type="button">Cerrar sesión</button>
+<p class="account-privacy">No compartas tu contraseña. La cuenta no verifica tu correo y todavía no incluye recuperación de contraseña.</p>
+</section>
+</dialog>
 <div id="toast" role="status" hidden></div><script type="module" src="/app.js"></script></body></html>

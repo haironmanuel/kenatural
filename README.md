@@ -18,7 +18,7 @@ El servidor escucha en el puerto 3000 (configurable con `PORT`). Para desarrollo
 
 Por defecto presenta **seis gimnasios ficticios** en cuatro ciudades, con conteos y perfiles horarios ilustrativos. No son un directorio verificado, estadísticas obtenidas de internet ni conteos reales. La demostración no genera falsas actualizaciones en vivo. No se verificaron datos de gimnasios en internet: el acceso a la web consultada fue bloqueado en este entorno.
 
-La aplicación no registra ubicación ni datos personales de visitantes. Los favoritos se conservan en el almacenamiento local del navegador. El CSV señala si los datos son ficticios, su fuente y la fecha de medición.
+La aplicación no registra la ubicación de visitantes. Como invitado, los favoritos se conservan en el almacenamiento local del navegador. Al crear una cuenta se almacenan el correo, el nombre, la ciudad opcional, los favoritos y un hash de la contraseña. El CSV señala si los datos de ocupación son ficticios, su fuente y la fecha de medición.
 
 ## Conectar una fuente real
 
@@ -58,6 +58,9 @@ La PWA conserva la interfaz para volver a abrirla sin conexión después de la p
 ## Validación realizada
 
 - 7 pruebas automatizadas de validación de datos y separación entre demostración y fuente conectada.
+- 10 pruebas de autenticación y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
+- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 17. No uses la URL de producción para pruebas.
+- Chromium: creación de cuenta, confirmación de contraseña, errores de acceso, edición de perfil, favoritos en un segundo contexto de navegador, restauración de sesión y cierre de sesión en escritorio y móvil.
 - Comprobación de sintaxis de servidor, cliente y service worker.
 - Navegador Chromium: búsqueda, filtros, favoritos persistentes, estado vacío, detalle, descarga CSV, registro del service worker, recursos PWA y distribución móvil sin desbordamiento.
 - Casos de fuente actual, medición antigua, error de consulta y texto de proveedor tratado como texto, sin ejecutar HTML.
@@ -95,3 +98,30 @@ No selecciones Static Site: la API necesita un servidor Node.js. No fijes `PORT`
 Para comprobar el despliegue, abre la URL asignada: deben aparecer seis gimnasios y el aviso de demostración. La ruta `/api/gyms` de esa misma URL debe devolver `mode: "demo"`. En iPhone, usa Safari → Compartir → Añadir a pantalla de inicio para instalar la aplicación.
 
 Si falla el despliegue, revisa **Logs** en Render. Si falta `package.json`, confirma la rama y el directorio raíz; si el proceso no inicia, confirma `npm start` y Node 24. Para futuros cambios, sube un nuevo commit y comprueba en Render que ese commit se despliegue. No se necesita publicar el entorno de Codex.
+
+## Cuentas y perfiles
+
+Pulsa **Iniciar sesión** en la cabecera. Puedes crear una cuenta con nombre, correo y contraseña de 10 a 128 caracteres. Después podrás editar tu nombre y ciudad en **Mi perfil**, guardar favoritos en la cuenta y cerrar sesión. Los favoritos de invitado se mantienen separados; no se importan automáticamente a ninguna cuenta. Se puede explorar y descargar CSV sin registrarse.
+
+Las contraseñas se guardan con scrypt y una sal aleatoria. Las sesiones duran 7 días y usan tokens aleatorios cuyo hash se almacena en la base de datos. El navegador recibe una cookie HttpOnly y SameSite=Lax; en producción también es Secure, con prefijo `__Host-`. No se guardan contraseñas ni tokens de sesión en localStorage o en la caché offline. El servidor comprueba el origen de las solicitudes de escritura y limita los intentos de autenticación. Estos límites están en memoria por instancia; un despliegue con varias instancias necesitará un limitador compartido.
+
+El correo es un identificador de acceso: esta versión **no verifica la propiedad del correo ni envía correos de recuperación de contraseña**. Tampoco incluye inicio de sesión con Google o Apple.
+
+### Desarrollo local
+
+`npm start` crea la base SQLite en `.local/accounts.sqlite`, una carpeta ignorada por Git. Se puede cambiar su ubicación con `SQLITE_PATH`. Requiere Node 24 recomendado (o una versión de Node 22 que incluya `node:sqlite`). Reiniciar la aplicación conserva las cuentas mientras se conserve ese archivo. Las pruebas automáticas crean bases aisladas temporales y no utilizan cuentas reales.
+
+### Activar cuentas persistentes en Render
+
+**No uses SQLite en el disco efímero del servicio web de Render.** En producción, si falta una conexión PostgreSQL válida, el servidor conserva la exploración pero desactiva el registro y el inicio de sesión con un aviso explícito.
+
+1. En Render crea una base **PostgreSQL** o selecciona una existente. Si creas una nueva, usa la misma región que el servicio `gymhora-rd`. Revisa precio, caducidad y copias de seguridad del plan antes de confirmar; los planes gratuitos, si se ofrecen, pueden tener caducidad y no son almacenamiento permanente.
+2. Abre la página de esa base de datos. Copia su **Internal Database URL** si ambas están en Render y en la misma región.
+3. En el servicio web **gymhora-rd → Environment**, añade `DATABASE_URL` con esa URL como valor privado. No la publiques en GitHub ni la pegues en el chat.
+4. Configura también `NODE_ENV=production` si no está ya configurado por el Blueprint. Render proporciona `RENDER=true`; cualquiera de las dos marcas activa las cookies seguras y evita usar SQLite accidentalmente.
+5. Guarda los cambios y vuelve a desplegar el último commit desde **Manual Deploy → Deploy latest commit**, o espera al despliegue automático si está activo. El servidor crea sus tablas e índices al iniciar; el usuario PostgreSQL debe tener permisos para crearlos.
+6. Abre la aplicación mediante HTTPS. Pulsa **Iniciar sesión → Crear cuenta**, registra una cuenta, cambia su ciudad y guarda un favorito. Cierra sesión y vuelve a entrar para comprobar la persistencia.
+
+`DATABASE_URL` se configura manualmente en Render: `render.yaml` no crea una base de datos ni contrata un plan de pago. No hace falta un secreto de firma de sesión, pues se utilizan tokens aleatorios almacenados en la base. La conexión respeta las opciones TLS de la URL de PostgreSQL, sin desactivar la verificación de certificados. Si usas un dominio personalizado y necesitas fijar el origen permitido explícitamente, configura `PUBLIC_ORIGIN` con su origen HTTPS exacto (sin ruta ni barra final). Normalmente se deriva del dominio de la petición.
+
+La conexión a tu base de producción y su funcionamiento desde Safari se deben comprobar después de configurar `DATABASE_URL`; las pruebas locales no demuestran que esa conexión externa ya funcione.

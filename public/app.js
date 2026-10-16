@@ -1,3 +1,4 @@
+import {getAccount, initializeAccount, saveAccountFavorites} from './account.js';
 const $=s=>document.querySelector(s);
 const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let gyms=[],mode='demo',filter='all',onlyFavorites=false,selected=null,installPrompt=null,connectionError=false;
@@ -30,8 +31,24 @@ function showDetail(id){selected=id;const g=gyms.find(g=>g.id===id);if(!g)return
  $('#detail-body').innerHTML=`<div class="eyebrow">${g.demo?'GIMNASIO FICTICIO · DEMOSTRACIÓN':'FUENTE: '+esc(g.source)}</div><h2>${esc(g.name)}</h2><p>⌖ ${esc(g.area)}, ${esc(g.city)}</p><div class="detail-count">${stale?'—':g.people}<small> ${stale?'sin conteo actual':'/ '+g.capacity+' personas'}</small></div><h3>${g.demo?'Ejemplo de horas pico':'Historial horario de la fuente'}</h3>${bars(g,true)}<p>${peak?`Mayor afluencia: <strong>${hourLabel(peak.hour)} (${peak.occupancy}%)</strong>. Menor afluencia: <strong>${bestHour(g)}</strong>.`:'Esta fuente no ofrece historial por hora.'}</p><div class="detail-note">${g.demo?'Estos valores son ilustrativos y no describen un gimnasio real. No hay personas siendo rastreadas.':`Última medición: ${esc(new Date(g.observedAt).toLocaleString('es-DO',{timeZone:'America/Santo_Domingo'}))}. ${stale?'La medición no se considera actual.':'Medición recibida hace menos de 2 minutos.'} Las horas pico son históricas; no garantizan la asistencia futura.`}</div><div class="detail-actions"><button id="detail-favorite">${favorites.has(g.id)?'♥ Quitar de favoritos':'♡ Guardar favorito'}</button><button id="detail-export">↓ Descargar CSV</button></div>`;
  paintBars($('#details'));$('#detail-favorite').onclick=()=>{toggleFavorite(id);showDetail(id);};$('#detail-export').onclick=()=>exportCSV([g]);if(!$('#details').open)$('#details').showModal();
 }
-function toggleFavorite(id){favorites.has(id)?favorites.delete(id):favorites.add(id);saveFavorites();render();}
-function showInfo(install=false){$('#info-title').textContent=install?'Lleva GymHora contigo':'Lo que ves en GymHora';$('#info-body').innerHTML=install?`<p>Abre la aplicación desde una dirección HTTPS para instalarla.</p><ol><li><strong>Android / Chrome:</strong> menú ⋮ → «Instalar aplicación» o «Añadir a pantalla de inicio».</li><li><strong>iPhone / Safari:</strong> Compartir → «Añadir a pantalla de inicio».</li><li><strong>Computadora:</strong> busca el icono de instalación en la barra de direcciones de Chrome o Edge.</li></ol><p>La interfaz puede abrirse sin conexión después de la primera visita. La ocupación actual necesita internet y una fuente conectada.</p>`:`<p><strong>Esta versión usa gimnasios ficticios y datos de demostración.</strong> No hemos verificado un directorio de gimnasios ni su asistencia en internet.</p><p>Un conteo en tiempo real requiere una fuente autorizada: por ejemplo, un sistema de entradas y salidas del gimnasio. Los horarios populares publicados en otros sitios no equivalen a un conteo de personas.</p><p>La aplicación está preparada para consultar una fuente cada 30 segundos. Las mediciones de más de 2 minutos se identifican como desactualizadas. Las gráficas muestran el perfil horario que aporte esa fuente.</p><p>La descarga CSV incluye el tipo de dato, la fuente y la fecha de la medición. Tus favoritos se guardan únicamente en este dispositivo.</p>`;$('#info').showModal();}
+let favoriteBusy=false;
+async function toggleFavorite(id){
+ if(favoriteBusy)return;
+ if(getAccount()){
+  favoriteBusy=true;
+  const next=new Set(favorites);next.has(id)?next.delete(id):next.add(id);
+  try{await saveAccountFavorites([...next]);if($('#details').open)showDetail(selected);}
+  catch(error){toast(error.message);}
+  finally{favoriteBusy=false;}
+ }else{favorites.has(id)?favorites.delete(id):favorites.add(id);saveFavorites();render();}
+}
+document.addEventListener('accountchange',()=>{
+ const user=getAccount();
+ if(user)favorites=new Set(user.favorites);
+ else{favorites=new Set();try{const saved=JSON.parse(localStorage.getItem('gymhora-favorites')||'[]');if(Array.isArray(saved))favorites=new Set(saved.filter(x=>typeof x==='string'));}catch{}}
+ render();if($('#details').open)showDetail(selected);
+});
+function showInfo(install=false){$('#info-title').textContent=install?'Lleva GymHora contigo':'Lo que ves en GymHora';$('#info-body').innerHTML=install?`<p>Abre la aplicación desde una dirección HTTPS para instalarla.</p><ol><li><strong>Android / Chrome:</strong> menú ⋮ → «Instalar aplicación» o «Añadir a pantalla de inicio».</li><li><strong>iPhone / Safari:</strong> Compartir → «Añadir a pantalla de inicio».</li><li><strong>Computadora:</strong> busca el icono de instalación en la barra de direcciones de Chrome o Edge.</li></ol><p>La interfaz puede abrirse sin conexión después de la primera visita. La ocupación actual necesita internet y una fuente conectada.</p>`:`<p><strong>Esta versión usa gimnasios ficticios y datos de demostración.</strong> No hemos verificado un directorio de gimnasios ni su asistencia en internet.</p><p>Un conteo en tiempo real requiere una fuente autorizada: por ejemplo, un sistema de entradas y salidas del gimnasio. Los horarios populares publicados en otros sitios no equivalen a un conteo de personas.</p><p>La aplicación está preparada para consultar una fuente cada 30 segundos. Las mediciones de más de 2 minutos se identifican como desactualizadas. Las gráficas muestran el perfil horario que aporte esa fuente.</p><p>La descarga CSV incluye el tipo de dato, la fuente y la fecha de la medición. Como invitado, tus favoritos se guardan en este dispositivo. Con una cuenta, se guardan en tu perfil.</p>`;$('#info').showModal();}
 function exportCSV(list){
  if(!list.length){toast('No hay gimnasios para descargar con estos filtros.');return;}
  const cell=v=>{let s=String(v??'');if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
@@ -57,5 +74,5 @@ const installApp=async()=>{if(installPrompt){await installPrompt.prompt();instal
 $('#install').onclick=installApp;$('#install-mobile').onclick=installApp;
 for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
 function clock(){const t=timeFormat.format(new Date());$('#clock').textContent=t;$('#local-time').textContent='🇩🇴 '+t+' · RD';}
-clock();setInterval(clock,30000);await load();setInterval(()=>{if(!document.hidden)load();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});window.addEventListener('online',load);
+clock();setInterval(clock,30000);await Promise.all([load(),initializeAccount()]);setInterval(()=>{if(!document.hidden)load();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});window.addEventListener('online',load);
 if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
