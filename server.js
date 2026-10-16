@@ -5,6 +5,7 @@ import {demoGyms,validateFeed} from './data.js';
 import {fileURLToPath} from 'node:url';
 import {createAuth} from './auth.js';
 import {createStore} from './auth-store.js';
+import {manualGym} from './manual-gyms.js';
 const root=resolve('public');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
@@ -17,7 +18,10 @@ return http.createServer(async(req,res)=>{
   if(await auth(req,res,path,json)) return;
   if(req.method!=='GET'){res.writeHead(405);return res.end();}
   if(path==='/api/gyms'){
-    if(!process.env.GYM_DATA_URL) return json(res,200,{mode:'demo',gyms:demoGyms});
+    let community=[],communityWarning;
+    try{if(store)community=(await store.listPublicGyms()).map(manualGym);}
+    catch{communityWarning='No pudimos consultar los gimnasios de la comunidad. Intenta de nuevo.';}
+    if(!process.env.GYM_DATA_URL) return json(res,200,{mode:'demo',gyms:[...community,...demoGyms],warning:communityWarning});
     try{
       const url=new URL(process.env.GYM_DATA_URL);
       if(url.protocol!=='https:') throw new Error('Se requiere HTTPS');
@@ -25,8 +29,13 @@ return http.createServer(async(req,res)=>{
       if(!upstream.ok) throw new Error('Fuente no disponible');
       const body=await upstream.text();
       if(body.length>2_000_000) throw new Error('Respuesta demasiado grande');
-      return json(res,200,{mode:'live',gyms:validateFeed(JSON.parse(body))});
-    }catch{return json(res,502,{error:'No pudimos consultar la fuente de ocupación. Intenta de nuevo en unos momentos.'});}
+      const upstreamGyms=validateFeed(JSON.parse(body));
+      const ids=new Set(community.map(g=>g.id));
+      return json(res,200,{mode:'live',gyms:[...community,...upstreamGyms.filter(g=>!ids.has(g.id))],warning:communityWarning});
+    }catch{
+      if(community.length)return json(res,200,{mode:'live',gyms:community,warning:'La fuente automática no respondió. Solo se muestran reportes manuales.'});
+      return json(res,502,{error:'No pudimos consultar la fuente de ocupación. Intenta de nuevo en unos momentos.'});
+    }
   }
   try{
     const file=resolve(root,'.'+decodeURIComponent(path==='/'?'/index.html':path));

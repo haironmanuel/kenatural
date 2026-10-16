@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { gymFields, manualGym } from './manual-gyms.js';
 const scrypt = promisify(scryptCallback);
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -75,6 +76,12 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
         json(res, 200, { available: true, user: user ? publicUser(user) : null });
         return true;
       }
+      if (req.method === 'GET' && path === '/api/auth/gyms') {
+        const user = await userFrom(req);
+        if (!user) throw fail(401, 'Inicia sesión para ver tus gimnasios.');
+        json(res, 200, { gyms: (await store.listOwnedGyms(user.id)).map(manualGym) });
+        return true;
+      }
       if (req.method !== 'POST') throw fail(405, 'Método no permitido.');
       const expectedOrigin = publicOrigin || `${production ? 'https' : 'http'}://${req.headers.host}`;
       if (req.headers.origin !== expectedOrigin) throw fail(403, 'La solicitud no pertenece a esta aplicación. Recarga la página.');
@@ -109,6 +116,28 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
         if (token) await store.deleteSession(hashToken(token));
         cookie(res, '', 0);
         json(res, 200, { user: null });
+      } else if (['/api/auth/gyms/create', '/api/auth/gyms/update', '/api/auth/gyms/delete'].includes(path)) {
+        const user = await userFrom(req);
+        if (!user) throw fail(401, 'Inicia sesión para administrar tus gimnasios.');
+        checkRate(req, 'gyms:' + user.id);
+        if (path.endsWith('/delete')) {
+          if (typeof body.id !== 'string' || body.id.length > 160) throw fail(400, 'Selecciona un gimnasio válido.');
+          if (!await store.deleteGym(body.id, user.id)) throw fail(404, 'No encontramos ese gimnasio entre los tuyos.');
+          json(res, 200, { deleted: true });
+        } else {
+          const fields = gymFields(body);
+          if (!fields) throw fail(400, 'Revisa el nombre, la ciudad, el sector y el nivel de ocupación.');
+          let gym;
+          if (path.endsWith('/create')) {
+            gym = await store.createGym('community-' + randomUUID(), user.id, fields);
+            if (!gym) throw fail(409, 'Puedes administrar hasta 20 gimnasios en tu cuenta.');
+          } else {
+            if (typeof body.id !== 'string' || body.id.length > 160) throw fail(400, 'Selecciona un gimnasio válido.');
+            gym = await store.updateGym(body.id, user.id, fields);
+            if (!gym) throw fail(404, 'No encontramos ese gimnasio entre los tuyos.');
+          }
+          json(res, path.endsWith('/create') ? 201 : 200, { gym: manualGym(gym) });
+        }
       } else if (path === '/api/auth/profile' || path === '/api/auth/favorites') {
         const user = await userFrom(req);
         if (!user) throw fail(401, 'Tu sesión terminó. Vuelve a iniciar sesión.');

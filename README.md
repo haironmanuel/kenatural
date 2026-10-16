@@ -16,7 +16,7 @@ El servidor escucha en el puerto 3000 (configurable con `PORT`). Para desarrollo
 
 ## Demostración y alcance
 
-Por defecto presenta **seis gimnasios ficticios** en cuatro ciudades, con conteos y perfiles horarios ilustrativos. No son un directorio verificado, estadísticas obtenidas de internet ni conteos reales. La demostración no genera falsas actualizaciones en vivo. No se verificaron datos de gimnasios en internet: el acceso a la web consultada fue bloqueado en este entorno.
+Por defecto presenta **seis gimnasios ficticios** en cuatro ciudades, con conteos y perfiles horarios ilustrativos. Junto a ellos pueden aparecer gimnasios añadidos por usuarios, identificados como reportes manuales de la comunidad. No son un directorio verificado, estadísticas obtenidas de internet ni conteos reales. La demostración no genera falsas actualizaciones en vivo. No se verificaron datos de gimnasios en internet: el acceso a la web consultada fue bloqueado en este entorno.
 
 La aplicación no registra la ubicación de visitantes. Como invitado, los favoritos se conservan en el almacenamiento local del navegador. Al crear una cuenta se almacenan el correo, el nombre, la ciudad opcional, los favoritos y un hash de la contraseña. El CSV señala si los datos de ocupación son ficticios, su fuente y la fecha de medición.
 
@@ -58,8 +58,8 @@ La PWA conserva la interfaz para volver a abrirla sin conexión después de la p
 ## Validación realizada
 
 - 7 pruebas automatizadas de validación de datos y separación entre demostración y fuente conectada.
-- 10 pruebas de autenticación y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
-- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 17. No uses la URL de producción para pruebas.
+- 15 pruebas de autenticación, gimnasios y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
+- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 22. No uses la URL de producción para pruebas.
 - Chromium: creación de cuenta, confirmación de contraseña, errores de acceso, edición de perfil, favoritos en un segundo contexto de navegador, restauración de sesión y cierre de sesión en escritorio y móvil.
 - Comprobación de sintaxis de servidor, cliente y service worker.
 - Navegador Chromium: búsqueda, filtros, favoritos persistentes, estado vacío, detalle, descarga CSV, registro del service worker, recursos PWA y distribución móvil sin desbordamiento.
@@ -125,3 +125,20 @@ El correo es un identificador de acceso: esta versión **no verifica la propieda
 `DATABASE_URL` se configura manualmente en Render: `render.yaml` no crea una base de datos ni contrata un plan de pago. No hace falta un secreto de firma de sesión, pues se utilizan tokens aleatorios almacenados en la base. La conexión respeta las opciones TLS de la URL de PostgreSQL, sin desactivar la verificación de certificados. Si usas un dominio personalizado y necesitas fijar el origen permitido explícitamente, configura `PUBLIC_ORIGIN` con su origen HTTPS exacto (sin ruta ni barra final). Normalmente se deriva del dominio de la petición.
 
 La conexión a tu base de producción y su funcionamiento desde Safari se deben comprobar después de configurar `DATABASE_URL`; las pruebas locales no demuestran que esa conexión externa ya funcione.
+
+
+## Añadir gimnasios y reportar su ocupación manualmente
+
+Abre **Mis gimnasios** sobre el listado, o **Mi perfil → Administrar mis gimnasios**. Debes iniciar sesión para publicar. Introduce el nombre, la ciudad y el sector y selecciona:
+
+- **Tranquilo:** hay bastante espacio.
+- **Moderado:** hay movimiento.
+- **Muy concurrido:** poco espacio libre.
+
+El gimnasio aparecerá en el listado público con la etiqueta **Comunidad · Sin verificar**, fecha de actualización y estado reportado. No se crea un conteo de personas, un porcentaje ni un historial de horas pico a partir de esa selección. Los reportes de más de dos horas se muestran como antiguos y dejan de participar en los filtros de ocupación reciente. Las mediciones automáticas conservan su umbral de dos minutos.
+
+Desde **Mis gimnasios**, el autor puede editar los datos, publicar otro estado y eliminar la entrada con confirmación. Cada cuenta puede gestionar hasta 20 gimnasios. El servidor deriva el autor de la sesión y comprueba ese autor para cada modificación y eliminación; no acepta un propietario indicado por el navegador. Añadir una sede no certifica la propiedad del gimnasio ni que su información sea auténtica. Los datos publicados son visibles para visitantes; el correo y el identificador del autor no se incluyen en el listado público. El CSV distingue `REPORTE_MANUAL` y exporta el estado textual, dejando vacíos los conteos y porcentajes que no existen.
+
+Los datos se guardan en la misma base de las cuentas. Para Render, sigue siendo necesaria una `DATABASE_URL` PostgreSQL válida. El arranque crea una tabla adicional con `CREATE TABLE IF NOT EXISTS`, sin borrar cuentas ni favoritos. Si ya configuraste la base, solo necesitas desplegar el nuevo commit. Si todavía no la configuraste, el aviso de cuentas no disponibles también impedirá publicar gimnasios; no se simula que se hayan guardado.
+
+Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 23 pruebas: 22 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.

@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Gimnasios y horas pico en Rep\u00fablica Dominicana",
+  "description": "Gimnasios y horas pico en República Dominicana",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check auth.js && node --check auth-store.js && node --check public/app.js && node --check public/account.js && node --check public/sw.js"
+    "check": "node --check server.js && node --check auth.js && node --check auth-store.js && node --check public/app.js && node --check public/account.js && node --check public/sw.js && node --check manual-gyms.js && node --check public/gym-editor.js"
   },
   "engines": {
     "node": ">=22"

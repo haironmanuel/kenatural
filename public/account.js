@@ -7,7 +7,7 @@ function announceAccount() {
   $('#account-button').title = user ? `Perfil de ${user.name}` : 'Iniciar sesión o crear una cuenta';
   document.dispatchEvent(new Event('accountchange'));
 }
-async function request(path, body) {
+export async function accountRequest(path, body) {
   let response;
   try {
     response = await fetch('/api/auth/' + path, {
@@ -25,6 +25,7 @@ async function request(path, body) {
   }
   return data;
 }
+const request = accountRequest;
 function setMode(next) {
   mode = next;
   const register = mode === 'register', profile = mode === 'profile';
