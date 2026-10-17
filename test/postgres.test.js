@@ -38,6 +38,8 @@ test('PostgreSQL: registro, sesión, perfil y favoritos persisten tras reconecta
     const manual = await call('gyms/create', { name: 'Gimnasio PostgreSQL', city: 'Santiago', area: 'Centro', status: 'medium', acceptTrial: true }, login.cookie);
     assert.equal(manual.response.status, 201);
     const gymId = manual.data.gym.id;
+    const moderatedId = 'moderation-' + randomUUID();
+    await store.createGym(moderatedId, userId, {name:'Hairon ass',city:'Santiago',area:'Centro',status:'quiet'});
     assert.equal(manual.data.gym.subscription.status, 'trialing');
     const { default: pg } = await import('pg');
     const clockClient = new pg.Client({ connectionString: databaseUrl });
@@ -52,9 +54,12 @@ test('PostgreSQL: registro, sesión, perfil y favoritos persisten tras reconecta
     assert.equal(restored.data.user.name, 'Perfil guardado');
     assert.equal(restored.data.user.city, 'Santiago');
     assert.deepEqual(restored.data.user.favorites, ['demo-1', 'demo-4']);
+    assert.equal(restored.data.notices.length, 1);
+    assert.match(restored.data.notices[0].message, /políticas de la empresa/);
     const owned = await call('gyms', undefined, login.cookie);
     assert.equal(owned.data.gyms[0].id, gymId);
     assert.equal(owned.data.gyms[0].manualStatus, 'medium');
+    assert.ok(!owned.data.gyms.some(g => g.id === moderatedId));
     assert.ok(owned.data.gyms[0].reportHistory[0].hours.some(h => h.level === 2));
     assert.equal(owned.data.gyms[0].subscription.status, 'expired');
     const publicGyms = await (await fetch(base + '/api/gyms')).json();
@@ -71,6 +76,8 @@ test('PostgreSQL: registro, sesión, perfil y favoritos persisten tras reconecta
     assert.equal(updated.data.gym.manualStatus, 'busy');
     assert.ok(updated.data.gym.reportHistory[0].hours.some(h => h.level === 3));
     assert.equal((await call('gyms/delete', { id: gymId }, login.cookie)).response.status, 200);
+    assert.equal((await call('notices/ack', { id: restored.data.notices[0].id }, login.cookie)).response.status, 200);
+    assert.deepEqual((await call('session', undefined, login.cookie)).data.notices, []);
     await call('logout', {}, login.cookie);
     assert.equal((await call('session', undefined, login.cookie)).data.user, null);
   } finally {

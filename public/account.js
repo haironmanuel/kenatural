@@ -1,11 +1,39 @@
 const $ = selector => document.querySelector(selector);
 let user = null, available = false, mode = 'login', busy = false;
+let notices = [];
 export const getAccount = () => user;
 
 function announceAccount() {
+  if (!user) notices = [];
+  renderNotices();
   $('#account-button').textContent = user ? 'Mi perfil' : 'Iniciar sesión';
   $('#account-button').title = user ? `Perfil de ${user.name}` : 'Iniciar sesión o crear una cuenta';
   document.dispatchEvent(new Event('accountchange'));
+}
+function renderNotices() {
+  for (const selector of ['#account-notices', '#profile-notices']) {
+    const root = $(selector); root.replaceChildren(); root.hidden = notices.length === 0;
+    if (!notices.length) continue;
+    const title = document.createElement('h3'); title.textContent = 'Aviso de GymHora RD'; root.append(title);
+    for (const notice of notices) {
+      const article = document.createElement('article');
+      const message = document.createElement('p'); message.textContent = notice.message;
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Entendido';
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await request('notices/ack', {id: notice.id});
+          notices = notices.filter(n => n.id !== notice.id); renderNotices();
+        } catch (error) {
+          button.disabled = false;
+          let feedback = article.querySelector('.notice-feedback');
+          if (!feedback) { feedback = document.createElement('p'); feedback.className = 'notice-feedback'; article.append(feedback); }
+          feedback.textContent = error.message;
+        }
+      };
+      article.append(message, button); root.append(article);
+    }
+  }
 }
 export async function accountRequest(path, body) {
   let response;
@@ -62,7 +90,7 @@ function setMode(next) {
 export async function initializeAccount() {
   try {
     const data = await request('session');
-    available = data.available; user = data.user;
+    available = data.available; user = data.user; notices = data.notices || [];
     $('#auth-availability').textContent = data.error || '';
   } catch {
     available = false;
@@ -104,7 +132,7 @@ $('#credentials-form').onsubmit = async event => {
   $('#auth-submit').textContent = mode === 'register' ? 'Creando tu cuenta…' : 'Iniciando sesión…';
   try {
     const data = await request(mode, { email: $('#auth-email').value, password: $('#auth-password').value, name: $('#auth-name').value });
-    user = data.user; announceAccount();
+    user = data.user; notices = data.notices || []; announceAccount();
     $('#credentials-form').reset();
     setMode('profile');
   } catch (error) { $('#auth-error').textContent = error.message; }

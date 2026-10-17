@@ -59,7 +59,7 @@ La PWA conserva la interfaz para volver a abrirla sin conexión después de la p
 
 - 7 pruebas automatizadas de validación de datos y separación entre demostración y fuente conectada.
 - 16 pruebas de autenticación, gimnasios y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
-- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 34. No uses la URL de producción para pruebas.
+- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 38. No uses la URL de producción para pruebas.
 - Chromium: creación de cuenta, confirmación de contraseña, errores de acceso, edición de perfil, favoritos en un segundo contexto de navegador, restauración de sesión y cierre de sesión en escritorio y móvil.
 - Comprobación de sintaxis de servidor, cliente y service worker.
 - Navegador Chromium: búsqueda, filtros, favoritos persistentes, estado vacío, detalle, descarga CSV, registro del service worker, recursos PWA y distribución móvil sin desbordamiento.
@@ -141,7 +141,7 @@ Desde **Mis gimnasios**, el autor puede editar los datos, publicar otro estado y
 
 Los datos se guardan en la misma base de las cuentas. Para Render, sigue siendo necesaria una `DATABASE_URL` PostgreSQL válida. El arranque crea una tabla adicional con `CREATE TABLE IF NOT EXISTS`, sin borrar cuentas ni favoritos. Si ya configuraste la base, solo necesitas desplegar el nuevo commit. Si todavía no la configuraste, el aviso de cuentas no disponibles también impedirá publicar gimnasios; no se simula que se hayan guardado.
 
-Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 35 pruebas: 34 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
+Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 39 pruebas: 38 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
 
 
 ## Plan para publicar gimnasios: RD$1,599 al mes y 7 días gratis
@@ -187,3 +187,16 @@ El historial se guarda en `gymhora_hourly_reports`, con una clave única por gim
 La migración solo recupera el último reporte ya conocido de cada gimnasio anterior y conserva su fecha original si está dentro de la ventana de siete días. No construye un perfil horario ficticio. Los gimnasios nuevos empiezan con una sola hora registrada y acumulan el resto cuando el autor reporta.
 
 Se añadieron seis pruebas de historial: zona horaria y medianoche, último reporte por hora, datos faltantes, aislamiento entre autores y borrado, persistencia/retención y migración sin datos inventados. La integración PostgreSQL comprueba además que los reportes sobreviven a la reconexión y que las actualizaciones cambian el nivel de la hora correspondiente.
+
+
+## Retirada de nombre y aviso privado
+
+Por solicitud del administrador de GymHora RD, el nombre exacto **Hairon ass** no se permite en los perfiles de gimnasio. La comparación normaliza Unicode, mayúsculas y espacios; no bloquea otros nombres por contener fragmentos similares. La API rechaza ese nombre al crear o editar una sede.
+
+Al arrancar esta versión, se buscan las sedes existentes que coincidan y se elimina cada una junto con sus registros dependientes. Se conserva la cuenta del autor. El borrado y la creación de un aviso privado se confirman en una misma transacción: si no puede guardarse el aviso, no se confirma el borrado. Cada aviso usa una clave por gimnasio para evitar duplicados al redesplegar. La condición de borrado comprueba el ID, el autor y el nombre original, de modo que no retire una sede que haya sido renombrada concurrentemente a un nombre permitido.
+
+El aviso dice: «Por políticas de la empresa, el nombre “Hairon ass” no puede utilizarse. El perfil del gimnasio fue retirado. Puedes registrar tu gimnasio con otro nombre». Se guarda en `gymhora_account_notices` y se entrega únicamente a su autor al iniciar sesión o restaurar una sesión existente. Se muestra en el perfil y en un aviso privado de la pantalla principal hasta pulsar **Entendido**. La confirmación comprueba la sesión y el propietario del aviso; otro usuario no puede leerlo ni confirmarlo. No se almacena el texto en localStorage ni en la caché offline.
+
+Esta acción sobre los datos reales se ejecuta **al iniciar el despliegue actualizado en Render**, utilizando su `DATABASE_URL`; un commit en GitHub por sí solo no demuestra que la retirada haya ocurrido. El entorno de desarrollo no tiene acceso a esa base de producción. La consulta pública realizada desde este entorno fue bloqueada por el proxy, por lo que la eliminación de producción no se ha verificado desde aquí.
+
+Se añadieron cuatro pruebas de política, retirada idempotente, reversión completa si falla el aviso y privacidad/confirmación al ingresar. La prueba PostgreSQL ejecuta además la retirada al reconectar y la confirmación del aviso. Chromium verifica que el nombre no aparezca, que el aviso se vea al ingresar y persista tras recargar hasta confirmarlo, y que no pueda recrearse el gimnasio con ese nombre.

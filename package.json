@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check auth.js && node --check auth-store.js && node --check public/app.js && node --check public/account.js && node --check public/sw.js && node --check manual-gyms.js && node --check public/gym-editor.js && node --check subscriptions.js && node --check hourly-reports.js && node --check public/hourly-chart.js"
+    "check": "node --check server.js && node --check auth.js && node --check auth-store.js && node --check public/app.js && node --check public/account.js && node --check public/sw.js && node --check manual-gyms.js && node --check public/gym-editor.js && node --check subscriptions.js && node --check hourly-reports.js && node --check public/hourly-chart.js && node --check name-policy.js"
   },
   "engines": {
     "node": ">=22"

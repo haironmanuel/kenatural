@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSa
 import { promisify } from 'node:util';
 import { gymFields, ownedGym } from './manual-gyms.js';
 import { LISTING_PLAN } from './subscriptions.js';
+import { isDisallowedGymName, NAME_POLICY_ERROR } from './name-policy.js';
 const scrypt = promisify(scryptCallback);
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -74,7 +75,7 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
       }
       if (req.method === 'GET' && path === '/api/auth/session') {
         const user = await userFrom(req);
-        json(res, 200, { available: true, user: user ? publicUser(user) : null });
+        json(res, 200, { available: true, user: user ? publicUser(user) : null, notices: user ? await store.listNotices(user.id) : [] });
         return true;
       }
       if (req.method === 'GET' && path === '/api/auth/gyms') {
@@ -111,12 +112,18 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
           if (!matches || !user) throw fail(401, 'Correo o contraseña incorrectos.');
         }
         await newSession(req, res, user);
-        json(res, path.endsWith('/register') ? 201 : 200, { user: publicUser(user) });
+        json(res, path.endsWith('/register') ? 201 : 200, { user: publicUser(user), notices: await store.listNotices(user.id) });
       } else if (path === '/api/auth/logout') {
         const token = tokenFrom(req);
         if (token) await store.deleteSession(hashToken(token));
         cookie(res, '', 0);
         json(res, 200, { user: null });
+      } else if (path === '/api/auth/notices/ack') {
+        const user = await userFrom(req);
+        if (!user) throw fail(401, 'Inicia sesión para confirmar tu aviso.');
+        if (typeof body.id !== 'string' || body.id.length > 200) throw fail(400, 'Selecciona un aviso válido.');
+        if (!await store.acknowledgeNotice(body.id, user.id)) throw fail(404, 'No encontramos ese aviso entre los tuyos.');
+        json(res, 200, { acknowledged: true });
       } else if (['/api/auth/gyms/create', '/api/auth/gyms/update', '/api/auth/gyms/delete'].includes(path)) {
         const user = await userFrom(req);
         if (!user) throw fail(401, 'Inicia sesión para administrar tus gimnasios.');
@@ -128,6 +135,7 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
         } else {
           const fields = gymFields(body);
           if (!fields) throw fail(400, 'Revisa el nombre, la ciudad, el sector y el nivel de ocupación.');
+          if (isDisallowedGymName(fields.name)) throw fail(400, NAME_POLICY_ERROR);
           let gym;
           if (path.endsWith('/create')) {
             if (body.acceptTrial !== true) throw fail(400, 'Acepta las condiciones de la prueba de 7 días y del plan de RD$1,599 al mes por gimnasio.');
