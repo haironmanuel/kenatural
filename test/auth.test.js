@@ -25,7 +25,27 @@ async function fixture(t, options = {}) {
 }
 const account = { name: 'Ana Pérez', email: 'ana@example.test', password: 'Una contraseña larga 2026' };
 const register = f => f.call('register', account);
-const gymInput = { name: 'Gimnasio de prueba', city: 'Santo Domingo', area: 'Piantini', status: 'quiet' };
+const gymInput = { name: 'Gimnasio de prueba', city: 'Santo Domingo', area: 'Piantini', status: 'quiet', acceptTrial: true };
+
+test('la publicación exige aceptar el plan, y la cuenta no puede simular pagos ni modificar su prueba', async t => {
+  const f = await fixture(t); const session = await register(f);
+  const refused = await f.call('gyms/create', { ...gymInput, acceptTrial: false }, session.cookie);
+  assert.equal(refused.response.status, 400);
+  assert.equal((await f.call('gyms', undefined, session.cookie)).data.gyms.length, 0);
+  const created = await f.call('gyms/create', { ...gymInput, paid: true, paid_until: Date.now() + 1e12, subscription: {status:'active'} }, session.cookie);
+  assert.equal(created.response.status, 201);
+  assert.equal(created.data.gym.subscription.status, 'trialing');
+  assert.equal(created.data.gym.subscription.paidThrough, null);
+  assert.equal(created.data.gym.subscription.paymentsAvailable, false);
+  const end = created.data.gym.subscription.trialEndsAt;
+  const updated = await f.call('gyms/update', { ...gymInput, id: created.data.gym.id, trial_ends_at: Date.now() + 1e12, paid_until: Date.now() + 1e12 }, session.cookie);
+  assert.equal(updated.data.gym.subscription.trialEndsAt, end);
+  assert.equal(updated.data.gym.subscription.paidThrough, null);
+  assert.equal(updated.data.plan.amount, 159900);
+  const publicResponse = await fetch(`http://127.0.0.1:${f.app.address().port}/api/gyms`);
+  const publicData = await publicResponse.json();
+  assert.equal(publicData.gyms.find(g => g.id === created.data.gym.id).subscription, undefined);
+});
 
 test('gimnasios manuales: creación pública, actualización y eliminación con sesión', async t => {
   const f = await fixture(t); const session = await register(f);

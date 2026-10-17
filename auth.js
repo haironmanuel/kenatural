@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import { gymFields, manualGym } from './manual-gyms.js';
+import { gymFields, ownedGym } from './manual-gyms.js';
+import { LISTING_PLAN } from './subscriptions.js';
 const scrypt = promisify(scryptCallback);
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const hashToken = token => createHash('sha256').update(token).digest('hex');
@@ -79,7 +80,7 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
       if (req.method === 'GET' && path === '/api/auth/gyms') {
         const user = await userFrom(req);
         if (!user) throw fail(401, 'Inicia sesión para ver tus gimnasios.');
-        json(res, 200, { gyms: (await store.listOwnedGyms(user.id)).map(manualGym) });
+        json(res, 200, { gyms: (await store.listOwnedGyms(user.id)).map(ownedGym), plan: LISTING_PLAN });
         return true;
       }
       if (req.method !== 'POST') throw fail(405, 'Método no permitido.');
@@ -129,6 +130,7 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
           if (!fields) throw fail(400, 'Revisa el nombre, la ciudad, el sector y el nivel de ocupación.');
           let gym;
           if (path.endsWith('/create')) {
+            if (body.acceptTrial !== true) throw fail(400, 'Acepta las condiciones de la prueba de 7 días y del plan de RD$1,599 al mes por gimnasio.');
             gym = await store.createGym('community-' + randomUUID(), user.id, fields);
             if (!gym) throw fail(409, 'Puedes administrar hasta 20 gimnasios en tu cuenta.');
           } else {
@@ -136,7 +138,10 @@ export function createAuth({ store, production = false, publicOrigin, rateLimit 
             gym = await store.updateGym(body.id, user.id, fields);
             if (!gym) throw fail(404, 'No encontramos ese gimnasio entre los tuyos.');
           }
-          json(res, path.endsWith('/create') ? 201 : 200, { gym: manualGym(gym) });
+          // Reload joined access fields after editing; never accept payment or
+          // trial dates from the browser, including forged "paid" flags.
+          const joined = (await store.listOwnedGyms(user.id)).find(row => row.id === gym.id);
+          json(res, path.endsWith('/create') ? 201 : 200, { gym: ownedGym(joined), plan: LISTING_PLAN });
         }
       } else if (path === '/api/auth/profile' || path === '/api/auth/favorites') {
         const user = await userFrom(req);

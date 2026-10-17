@@ -58,8 +58,8 @@ La PWA conserva la interfaz para volver a abrirla sin conexión después de la p
 ## Validación realizada
 
 - 7 pruebas automatizadas de validación de datos y separación entre demostración y fuente conectada.
-- 15 pruebas de autenticación, gimnasios y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
-- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 22. No uses la URL de producción para pruebas.
+- 16 pruebas de autenticación, gimnasios y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
+- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 28. No uses la URL de producción para pruebas.
 - Chromium: creación de cuenta, confirmación de contraseña, errores de acceso, edición de perfil, favoritos en un segundo contexto de navegador, restauración de sesión y cierre de sesión en escritorio y móvil.
 - Comprobación de sintaxis de servidor, cliente y service worker.
 - Navegador Chromium: búsqueda, filtros, favoritos persistentes, estado vacío, detalle, descarga CSV, registro del service worker, recursos PWA y distribución móvil sin desbordamiento.
@@ -137,8 +137,36 @@ Abre **Mis gimnasios** sobre el listado, o **Mi perfil → Administrar mis gimna
 
 El gimnasio aparecerá en el listado público con la etiqueta **Comunidad · Sin verificar**, fecha de actualización y estado reportado. No se crea un conteo de personas, un porcentaje ni un historial de horas pico a partir de esa selección. Los reportes de más de dos horas se muestran como antiguos y dejan de participar en los filtros de ocupación reciente. Las mediciones automáticas conservan su umbral de dos minutos.
 
-Desde **Mis gimnasios**, el autor puede editar los datos, publicar otro estado y eliminar la entrada con confirmación. Cada cuenta puede gestionar hasta 20 gimnasios. El servidor deriva el autor de la sesión y comprueba ese autor para cada modificación y eliminación; no acepta un propietario indicado por el navegador. Añadir una sede no certifica la propiedad del gimnasio ni que su información sea auténtica. Los datos publicados son visibles para visitantes; el correo y el identificador del autor no se incluyen en el listado público. El CSV distingue `REPORTE_MANUAL` y exporta el estado textual, dejando vacíos los conteos y porcentajes que no existen.
+Desde **Mis gimnasios**, el autor puede editar los datos, publicar otro estado y eliminar la entrada con confirmación. Cada cuenta puede gestionar hasta 20 gimnasios. El servidor deriva el autor de la sesión y comprueba ese autor para cada modificación y eliminación; no acepta un propietario indicado por el navegador. Añadir una sede no certifica la propiedad del gimnasio ni que su información sea auténtica. Los datos publicados son visibles para visitantes durante la prueba o un período pagado vigente; el correo y el identificador del autor no se incluyen en el listado público. El CSV distingue `REPORTE_MANUAL` y exporta el estado textual, dejando vacíos los conteos y porcentajes que no existen.
 
 Los datos se guardan en la misma base de las cuentas. Para Render, sigue siendo necesaria una `DATABASE_URL` PostgreSQL válida. El arranque crea una tabla adicional con `CREATE TABLE IF NOT EXISTS`, sin borrar cuentas ni favoritos. Si ya configuraste la base, solo necesitas desplegar el nuevo commit. Si todavía no la configuraste, el aviso de cuentas no disponibles también impedirá publicar gimnasios; no se simula que se hayan guardado.
 
-Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 23 pruebas: 22 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
+Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 29 pruebas: 28 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
+
+
+## Plan para publicar gimnasios: RD$1,599 al mes y 7 días gratis
+
+La cuenta personal, la búsqueda y los favoritos siguen siendo gratuitos. La publicación de cada gimnasio tiene un precio de **RD$1,599 mensuales por gimnasio**, con una **única prueba de siete días por cuenta de publicador**. Todos los gimnasios de esa cuenta comparten la fecha de fin de prueba; el precio mensual es por sede, no por los veinte perfiles permitidos. Añadir el primer gimnasio inicia el plazo de siete períodos de 24 horas medidos por el servidor. El formulario pide aceptar expresamente las condiciones antes de guardar un gimnasio nuevo.
+
+**Estado actual: plan y período de prueba implementados; cobros reales pendientes.** El propietario de GymHora todavía no ha contratado una pasarela. No hay Checkout, formulario de tarjeta, cargos automáticos, renovación automática, cancelación de cargos ni endpoint de activación de pago. La pantalla lo informa y `GET /api/listing-plan` devuelve `paymentsAvailable: false`. Aceptar las condiciones de prueba no autoriza un cargo futuro; esa autorización tendrá que solicitarse al contratar la suscripción con la pasarela elegida.
+
+Mientras dure la prueba, el gimnasio aparece en el listado. Al vencer, el servidor lo excluye del listado público y de las búsquedas públicas, pero conserva su información y permite al autor verla, editarla o eliminarla. El panel muestra el estado, los días restantes y la fecha y hora de vencimiento. No se inventan pagos: los datos del navegador como `paid`, `paid_until` o `trial_ends_at` no conceden acceso ni extienden el plazo.
+
+### Migración de los perfiles existentes
+
+Al iniciar esta versión, los publicadores que ya tienen gimnasios reciben una sola prueba de siete días desde la migración. Las fechas se guardan en `gymhora_publisher_trials`; reiniciar, redesplegar, editar, borrar o volver a añadir un gimnasio en esa cuenta no reinicia la prueba. Una cuenta nueva que solo busca gimnasios no inicia una prueba. Esta medida no verifica la identidad del negocio ni impide que una persona registre cuentas diferentes; para ello haría falta verificación comercial adicional.
+
+Se crea además `gymhora_listing_subscriptions`, reservada para períodos pagados confirmados por una futura integración de pagos. No existe una API que permita al usuario escribir esa tabla. El listado contempla la fecha `paid_until` por gimnasio, pero el código actual no registra ni confirma pagos reales. Los registros pagados presentes en las pruebas son fixtures exclusivos de bases de prueba.
+
+### Qué falta para cobrar de verdad
+
+1. Contratar una pasarela compatible con el país donde está registrado el negocio y con suscripciones recurrentes en DOP. Confirmar con el proveedor sus comisiones, requisitos comerciales y soporte de pruebas gratis.
+2. Integrar el pago alojado por la pasarela para **RD$1,599 por gimnasio al mes**, con consentimiento claro, sin almacenar tarjetas en GymHora.
+3. Verificar los eventos firmados del proveedor y el importe, moneda, gimnasio y período antes de habilitar un período pagado. Hacer el procesamiento idempotente y contemplar renovaciones, pagos rechazados, cancelaciones y reembolsos. Un regreso a una página de éxito no debe activar una suscripción.
+4. Añadir gestión de la suscripción y cancelación, configurar las credenciales únicamente en Render y probar todo con la modalidad de pruebas del proveedor antes de aceptar dinero real.
+
+Hasta completar esos pasos, no hay forma de pagar desde la aplicación. Por ello, al cumplirse los siete días, la publicación queda pausada. Ten en cuenta este límite antes de invitar gimnasios a iniciar una prueba. No se crearon cuentas de pago ni se contrataron servicios durante esta implementación.
+
+### Validación de la prueba y el acceso
+
+La suite verifica precio y moneda, consentimiento obligatorio, rechazo de estados de pago fabricados, el límite exacto de siete días, ocultamiento al vencer, conservación de datos privados, prueba compartida por cuenta, persistencia al redesplegar y no reinicio al eliminar y recrear. También se comprobaron con Chromium la pantalla de precio, el alta gratuita de usuario, el consentimiento, la visibilidad de un gimnasio durante la prueba y su ocultamiento tras vencer, la edición posterior y el diseño móvil. La integración PostgreSQL comprueba el vencimiento tras reconectar y la lectura de un período pagado de prueba sin exponer una API que simule un pago.

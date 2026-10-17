@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {createAuth} from './auth.js';
 import {createStore} from './auth-store.js';
 import {manualGym} from './manual-gyms.js';
+import {LISTING_PLAN} from './subscriptions.js';
 const root=resolve('public');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
@@ -17,6 +18,7 @@ return http.createServer(async(req,res)=>{
   res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');
   if(await auth(req,res,path,json)) return;
   if(req.method!=='GET'){res.writeHead(405);return res.end();}
+  if(path==='/api/listing-plan')return json(res,200,LISTING_PLAN);
   if(path==='/api/gyms'){
     let community=[],communityWarning;
     try{if(store)community=(await store.listPublicGyms()).map(manualGym);}

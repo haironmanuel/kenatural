@@ -6,11 +6,20 @@ let owned = [], editing = null, deleting = null, owner = null, busy = false;
 function resetForm() {
   editing = null; deleting = null;
   $('#gym-form').reset(); $('#gym-form-title').textContent = 'Añade tu gimnasio';
-  $('#gym-save').textContent = 'Publicar gimnasio'; $('#gym-cancel').hidden = true;
+  $('#gym-save').textContent = 'Guardar gimnasio';
+  $('#trial-consent-row').hidden = false; $('#accept-trial').required = true; $('#gym-cancel').hidden = true;
   $('#gym-delete-confirm').hidden = true;
 }
+function subscriptionText(gym) {
+  const sub = gym.subscription;
+  if (!sub) return 'No pudimos consultar la suscripción.';
+  const date = value => new Date(value).toLocaleString('es-DO', {timeZone:'America/Santo_Domingo'});
+  if (sub.status === 'trialing') return `Prueba gratis · ${sub.trialDaysRemaining} ${sub.trialDaysRemaining === 1 ? 'día restante' : 'días restantes'}. Visible hasta ${date(sub.trialEndsAt)}.`;
+  if (sub.status === 'active') return `Suscripción activa. Visible hasta ${date(sub.paidThrough)}.`;
+  return 'Publicación pausada: terminó la prueba o el período pagado. Tus datos siguen guardados. Los pagos todavía no están habilitados.';
+}
 function list() {
-  $('#owned-gyms').innerHTML = owned.length ? owned.map(g => `<article class="owned-gym"><div><strong>${esc(g.name)}</strong><p>${esc(g.area)} · ${esc(g.city)}</p><span class="badge ${g.manualStatus}">${labels[g.manualStatus]}</span><small>Último reporte: ${esc(new Date(g.observedAt).toLocaleString('es-DO', {timeZone:'America/Santo_Domingo'}))}</small></div><div class="owned-actions"><button type="button" data-edit-gym="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar y reportar</button><button type="button" data-delete-gym="${esc(g.id)}" aria-label="Eliminar ${esc(g.name)}">Eliminar</button></div></article>`).join('') : '<p class="gym-list-empty">Todavía no has añadido gimnasios. Empieza con el formulario de abajo.</p>';
+  $('#owned-gyms').innerHTML = owned.length ? owned.map(g => `<article class="owned-gym"><div><strong>${esc(g.name)}</strong><p>${esc(g.area)} · ${esc(g.city)}</p><span class="badge ${g.manualStatus}">${labels[g.manualStatus]}</span><small>Último reporte: ${esc(new Date(g.observedAt).toLocaleString('es-DO', {timeZone:'America/Santo_Domingo'}))}</small><p class="subscription-state ${g.subscription?.visible?'subscription-visible':'subscription-paused'}">${esc(subscriptionText(g))}</p></div><div class="owned-actions"><button type="button" data-edit-gym="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar y reportar</button><button type="button" data-delete-gym="${esc(g.id)}" aria-label="Eliminar ${esc(g.name)}">Eliminar</button></div></article>`).join('') : '<p class="gym-list-empty">Todavía no has añadido gimnasios. Empieza con el formulario de abajo.</p>';
 }
 async function reload() {
   const id = getAccount()?.id;
@@ -44,7 +53,7 @@ $('#owned-gyms').onclick = event => {
     for (const field of ['name', 'city', 'area']) $('#gym-' + field).value = gym[field];
     $('#gym-occupancy').value = gym.manualStatus;
     $('#gym-form-title').textContent = 'Actualiza tu gimnasio'; $('#gym-save').textContent = 'Guardar y actualizar reporte';
-    $('#gym-cancel').hidden = false; $('#gym-status-message').textContent = ''; $('#gym-name').focus();
+    $('#gym-cancel').hidden = false; $('#trial-consent-row').hidden = true; $('#accept-trial').required = false; $('#gym-status-message').textContent = ''; $('#gym-name').focus();
   }
   if (remove) {
     deleting = remove.dataset.deleteGym;
@@ -58,7 +67,8 @@ async function mutate(path, body, success) {
   $('#gym-status-message').textContent = 'Guardando…';
   let saved = false;
   try {
-    await accountRequest(path, body); saved = true;
+    const result = await accountRequest(path, body); saved = true;
+    if (result.gym) success = result.gym.subscription?.visible ? 'Gimnasio guardado. Su perfil aparece en el listado durante el período activo.' : 'Gimnasio guardado como privado. Necesita una suscripción activa para aparecer en el listado.';
     resetForm(); document.dispatchEvent(new Event('gymschanged'));
     await reload(); $('#gym-status-message').textContent = success;
   } catch (error) { $('#gym-status-message').textContent = (saved ? 'Se guardó el cambio, pero no pudimos recargar la lista. ' : '') + error.message; }
@@ -66,7 +76,7 @@ async function mutate(path, body, success) {
 }
 $('#gym-form').onsubmit = event => {
   event.preventDefault();
-  const body = { status: $('#gym-occupancy').value };
+  const body = { status: $('#gym-occupancy').value, acceptTrial: $('#accept-trial').checked };
   for (const field of ['name', 'city', 'area']) body[field] = $('#gym-' + field).value;
   if (editing) body.id = editing;
   mutate(editing ? 'gyms/update' : 'gyms/create', body, 'Tu gimnasio y su reporte se publicaron.');

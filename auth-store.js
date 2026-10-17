@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { TRIAL_MS } from './subscriptions.js';
 
 const schema = `
 CREATE TABLE IF NOT EXISTS gymhora_users (
@@ -27,10 +28,20 @@ CREATE TABLE IF NOT EXISTS gymhora_manual_gyms (
 );
 CREATE INDEX IF NOT EXISTS gymhora_manual_gyms_owner ON gymhora_manual_gyms(owner_id);
 CREATE INDEX IF NOT EXISTS gymhora_manual_gyms_updated ON gymhora_manual_gyms(updated_at);
+CREATE TABLE IF NOT EXISTS gymhora_publisher_trials (
+  owner_id TEXT PRIMARY KEY REFERENCES gymhora_users(id) ON DELETE CASCADE,
+  started_at BIGINT NOT NULL,
+  trial_ends_at BIGINT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gymhora_listing_subscriptions (
+  gym_id TEXT PRIMARY KEY REFERENCES gymhora_manual_gyms(id) ON DELETE CASCADE,
+  paid_until BIGINT NOT NULL,
+  verified_payment_reference TEXT NOT NULL UNIQUE
+);
 `;
 
 // Both adapters use bound parameters, and the same schema and account behavior.
-export async function createStore({ databaseUrl = process.env.DATABASE_URL, sqlitePath = process.env.SQLITE_PATH || '.local/accounts.sqlite', production = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true' } = {}) {
+export async function createStore({ databaseUrl = process.env.DATABASE_URL, sqlitePath = process.env.SQLITE_PATH || '.local/accounts.sqlite', production = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true', now = Date.now } = {}) {
   let query, close;
   if (databaseUrl) {
     const { default: pg } = await import('pg');
@@ -53,11 +64,23 @@ export async function createStore({ databaseUrl = process.env.DATABASE_URL, sqli
     };
     close = async () => db.close();
   }
+  // Existing publishers receive one trial at migration. ON CONFLICT preserves its
+  // original deadline across redeploys, edits, and deletion/recreation of gyms.
+  const migrationTime = now();
+  try {
+    await query('INSERT INTO gymhora_publisher_trials (owner_id, started_at, trial_ends_at) SELECT DISTINCT owner_id, CAST($1 AS BIGINT), CAST($2 AS BIGINT) FROM gymhora_manual_gyms WHERE 1 = 1 ON CONFLICT (owner_id) DO NOTHING', [migrationTime, migrationTime + TRIAL_MS]);
+  } catch (error) { await close(); throw error; }
+  const ownedSQL = 'SELECT g.*, t.trial_ends_at, s.paid_until FROM gymhora_manual_gyms g LEFT JOIN gymhora_publisher_trials t ON t.owner_id = g.owner_id LEFT JOIN gymhora_listing_subscriptions s ON s.gym_id = g.id';
   return {
     close,
-    listPublicGyms: () => query('SELECT id, name, city, area, status, updated_at FROM gymhora_manual_gyms ORDER BY updated_at DESC, id LIMIT 1000'),
-    listOwnedGyms: id => query('SELECT id, name, city, area, status, updated_at FROM gymhora_manual_gyms WHERE owner_id = $1 ORDER BY updated_at DESC, id', [id]),
-    createGym: async (id, ownerId, fields) => (await query('INSERT INTO gymhora_manual_gyms (id, owner_id, name, city, area, status, updated_at) SELECT $1, $2, $3, $4, $5, $6, $7 WHERE (SELECT COUNT(*) FROM gymhora_manual_gyms WHERE owner_id = $2) < 20 RETURNING *', [id, ownerId, fields.name, fields.city, fields.area, fields.status, Date.now()]))[0],
+    listPublicGyms: () => query(ownedSQL + ' WHERE COALESCE(t.trial_ends_at, 0) > $1 OR COALESCE(s.paid_until, 0) > $1 ORDER BY g.updated_at DESC, g.id LIMIT 1000', [now()]),
+    listOwnedGyms: id => query(ownedSQL + ' WHERE g.owner_id = $1 ORDER BY g.updated_at DESC, g.id', [id]),
+    createGym: async (id, ownerId, fields) => {
+      const start = now();
+      await query('INSERT INTO gymhora_publisher_trials (owner_id, started_at, trial_ends_at) VALUES ($1, $2, $3) ON CONFLICT (owner_id) DO NOTHING', [ownerId, start, start + TRIAL_MS]);
+      const gym = (await query('INSERT INTO gymhora_manual_gyms (id, owner_id, name, city, area, status, updated_at) SELECT $1, $2, $3, $4, $5, $6, $7 WHERE (SELECT COUNT(*) FROM gymhora_manual_gyms WHERE owner_id = $2) < 20 RETURNING *', [id, ownerId, fields.name, fields.city, fields.area, fields.status, start]))[0];
+      return gym ? (await query(ownedSQL + ' WHERE g.id = $1 AND g.owner_id = $2', [id, ownerId]))[0] : undefined;
+    },
     updateGym: async (id, ownerId, fields) => (await query('UPDATE gymhora_manual_gyms SET name = $1, city = $2, area = $3, status = $4, updated_at = $5 WHERE id = $6 AND owner_id = $7 RETURNING *', [fields.name, fields.city, fields.area, fields.status, Date.now(), id, ownerId]))[0],
     deleteGym: async (id, ownerId) => (await query('DELETE FROM gymhora_manual_gyms WHERE id = $1 AND owner_id = $2 RETURNING id', [id, ownerId]))[0],
     userByEmail: async email => (await query('SELECT * FROM gymhora_users WHERE email = $1', [email]))[0],

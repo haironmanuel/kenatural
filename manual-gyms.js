@@ -1,4 +1,8 @@
+import { listingSubscription } from './subscriptions.js';
 export const manualStatuses = ['quiet', 'medium', 'busy'];
+export function ownedGym(row) {
+  return { ...manualGym(row), subscription: listingSubscription(row) };
+}
 export function manualGym(row) {
   return {
     id: row.id, name: row.name, city: row.city, area: row.area,
