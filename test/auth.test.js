@@ -55,6 +55,8 @@ test('gimnasios manuales: creación pública, actualización y eliminación con 
   assert.equal(gym.manual, true); assert.equal(gym.demo, false);
   assert.equal(gym.people, null); assert.equal(gym.capacity, null); assert.deepEqual(gym.hourly, []);
   assert.equal(gym.manualStatus, 'quiet'); assert.equal(gym.owner_id, undefined);
+  assert.equal(gym.reportHistory[0].hours.filter(h => h.level !== null).length, 1);
+  assert.ok(gym.reportHistory[0].hours.some(h => h.level === 1));
   assert.ok(Math.abs(Date.now() - Date.parse(gym.observedAt)) < 5000);
   const own = await f.call('gyms', undefined, session.cookie); assert.equal(own.data.gyms.length, 1);
   const publicResponse = await fetch(`http://127.0.0.1:${f.app.address().port}/api/gyms`);
@@ -63,6 +65,7 @@ test('gimnasios manuales: creación pública, actualización y eliminación con 
   assert.ok(!JSON.stringify(publicData).includes(account.email));
   const update = await f.call('gyms/update', { ...gymInput, id: gym.id, status: 'busy', name: 'Nuevo nombre' }, session.cookie);
   assert.equal(update.response.status, 200); assert.equal(update.data.gym.manualStatus, 'busy');
+  assert.ok(update.data.gym.reportHistory[0].hours.some(h => h.level === 3));
   assert.equal(update.data.gym.name, 'Nuevo nombre');
   assert.equal((await f.call('gyms/delete', { id: gym.id }, session.cookie)).response.status, 200);
   assert.equal((await f.call('gyms', undefined, session.cookie)).data.gyms.length, 0);

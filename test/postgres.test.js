@@ -55,6 +55,7 @@ test('PostgreSQL: registro, sesión, perfil y favoritos persisten tras reconecta
     const owned = await call('gyms', undefined, login.cookie);
     assert.equal(owned.data.gyms[0].id, gymId);
     assert.equal(owned.data.gyms[0].manualStatus, 'medium');
+    assert.ok(owned.data.gyms[0].reportHistory[0].hours.some(h => h.level === 2));
     assert.equal(owned.data.gyms[0].subscription.status, 'expired');
     const publicGyms = await (await fetch(base + '/api/gyms')).json();
     assert.ok(!publicGyms.gyms.some(g => g.id === gymId));
@@ -68,6 +69,7 @@ test('PostgreSQL: registro, sesión, perfil y favoritos persisten tras reconecta
     assert.ok((await (await fetch(base + '/api/gyms')).json()).gyms.some(g => g.id === gymId));
     const updated = await call('gyms/update', { id: gymId, name: 'Nombre actualizado', city: 'Santiago', area: 'Centro', status: 'busy' }, login.cookie);
     assert.equal(updated.data.gym.manualStatus, 'busy');
+    assert.ok(updated.data.gym.reportHistory[0].hours.some(h => h.level === 3));
     assert.equal((await call('gyms/delete', { id: gymId }, login.cookie)).response.status, 200);
     await call('logout', {}, login.cookie);
     assert.equal((await call('session', undefined, login.cookie)).data.user, null);

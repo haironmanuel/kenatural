@@ -59,7 +59,7 @@ La PWA conserva la interfaz para volver a abrirla sin conexión después de la p
 
 - 7 pruebas automatizadas de validación de datos y separación entre demostración y fuente conectada.
 - 16 pruebas de autenticación, gimnasios y perfiles: registro, contraseña, cookies, aislamiento, expiración, cierre de sesión, límites de intentos y persistencia.
-- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 28. No uses la URL de producción para pruebas.
+- Una prueba de integración con PostgreSQL 17 real: registro, acceso, edición y favoritos conservados al reconectar. Para repetirla, configura `GYMHORA_TEST_DATABASE_URL` con una base exclusiva para pruebas y ejecuta `npm test`; sin esa variable se omite esa prueba, sin omitir las otras 34. No uses la URL de producción para pruebas.
 - Chromium: creación de cuenta, confirmación de contraseña, errores de acceso, edición de perfil, favoritos en un segundo contexto de navegador, restauración de sesión y cierre de sesión en escritorio y móvil.
 - Comprobación de sintaxis de servidor, cliente y service worker.
 - Navegador Chromium: búsqueda, filtros, favoritos persistentes, estado vacío, detalle, descarga CSV, registro del service worker, recursos PWA y distribución móvil sin desbordamiento.
@@ -135,13 +135,13 @@ Abre **Mis gimnasios** sobre el listado, o **Mi perfil → Administrar mis gimna
 - **Moderado:** hay movimiento.
 - **Muy concurrido:** poco espacio libre.
 
-El gimnasio aparecerá en el listado público con la etiqueta **Comunidad · Sin verificar**, fecha de actualización y estado reportado. No se crea un conteo de personas, un porcentaje ni un historial de horas pico a partir de esa selección. Los reportes de más de dos horas se muestran como antiguos y dejan de participar en los filtros de ocupación reciente. Las mediciones automáticas conservan su umbral de dos minutos.
+El gimnasio aparecerá en el listado público con la etiqueta **Comunidad · Sin verificar**, fecha de actualización y estado reportado. Cada selección guarda un nivel manual (1, 2 o 3) para la hora del reporte. No genera un conteo de personas, un porcentaje de ocupación ni una predicción de horas pico. Los reportes de más de dos horas se muestran como antiguos y dejan de participar en los filtros de ocupación reciente. Las mediciones automáticas conservan su umbral de dos minutos.
 
 Desde **Mis gimnasios**, el autor puede editar los datos, publicar otro estado y eliminar la entrada con confirmación. Cada cuenta puede gestionar hasta 20 gimnasios. El servidor deriva el autor de la sesión y comprueba ese autor para cada modificación y eliminación; no acepta un propietario indicado por el navegador. Añadir una sede no certifica la propiedad del gimnasio ni que su información sea auténtica. Los datos publicados son visibles para visitantes durante la prueba o un período pagado vigente; el correo y el identificador del autor no se incluyen en el listado público. El CSV distingue `REPORTE_MANUAL` y exporta el estado textual, dejando vacíos los conteos y porcentajes que no existen.
 
 Los datos se guardan en la misma base de las cuentas. Para Render, sigue siendo necesaria una `DATABASE_URL` PostgreSQL válida. El arranque crea una tabla adicional con `CREATE TABLE IF NOT EXISTS`, sin borrar cuentas ni favoritos. Si ya configuraste la base, solo necesitas desplegar el nuevo commit. Si todavía no la configuraste, el aviso de cuentas no disponibles también impedirá publicar gimnasios; no se simula que se hayan guardado.
 
-Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 29 pruebas: 28 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
+Se comprobaron las operaciones en SQLite y PostgreSQL, el aislamiento entre cuentas, la validación, la persistencia tras reconectar y el funcionamiento en Chromium en escritorio y móvil. La suite contiene 35 pruebas: 34 habituales y una integración PostgreSQL optativa mediante `GYMHORA_TEST_DATABASE_URL`.
 
 
 ## Plan para publicar gimnasios: RD$1,599 al mes y 7 días gratis
@@ -170,3 +170,20 @@ Hasta completar esos pasos, no hay forma de pagar desde la aplicación. Por ello
 ### Validación de la prueba y el acceso
 
 La suite verifica precio y moneda, consentimiento obligatorio, rechazo de estados de pago fabricados, el límite exacto de siete días, ocultamiento al vencer, conservación de datos privados, prueba compartida por cuenta, persistencia al redesplegar y no reinicio al eliminar y recrear. También se comprobaron con Chromium la pantalla de precio, el alta gratuita de usuario, el consentimiento, la visibilidad de un gimnasio durante la prueba y su ocultamiento tras vencer, la edición posterior y el diseño móvil. La integración PostgreSQL comprueba el vencimiento tras reconectar y la lectura de un período pagado de prueba sin exponer una API que simule un pago.
+
+
+## Indicadores por hora de los gimnasios registrados
+
+Los gimnasios registrados muestran gráficas de barras de **00:00 a 23:00** en sus tarjetas públicas, en **Ver detalle** y en **Mis gimnasios**. La escala es cualitativa: **1 = Tranquilo, 2 = Moderado, 3 = Muy concurrido**. Estos niveles no son porcentajes ni estimaciones de cantidad de personas; los ejemplos ficticios y las mediciones de proveedores mantienen sus propias gráficas porcentuales.
+
+Cada vez que el autor guarda un gimnasio o pulsa **Editar y reportar → Guardar y actualizar reporte**, el servidor registra la selección en la hora y fecha locales de `America/Santo_Domingo`. Si hay varios reportes en una misma hora, la barra muestra el último. No se rellenan las horas anteriores, las futuras ni las horas intermedias: **sin datos** es diferente de Tranquilo.
+
+En **Ver detalle**, el selector permite consultar hoy y los seis días anteriores. La tabla **Ver reportes por hora** ofrece las 24 horas con el nivel y el momento exacto del reporte guardado. Si hay suficientes horas registradas, el resumen compara el mayor y menor nivel observados; si no, informa de la falta de datos. No anuncia horas pico típicas ni predice asistencia.
+
+La descarga CSV de un gimnasio manual incluye todos sus reportes horarios disponibles en esos siete días, con `fecha_RD`, `hora_RD`, `medicion_UTC`, `nivel_manual_1_a_3` y el texto del nivel. Los campos de personas, capacidad y porcentaje quedan vacíos. No exporta filas inventadas para horas sin datos.
+
+El historial se guarda en `gymhora_hourly_reports`, con una clave única por gimnasio, fecha y hora, y se elimina en cascada al borrar la sede. Las consultas recuperan los datos en lote y solo incluyen los gimnasios a los que el usuario tiene acceso: públicos durante su prueba o período pagado, y privados para su autor. Se muestran siete días de calendario dominicano; los datos anteriores se depuran al arrancar o registrar reportes. El estado actual sigue caducando a las dos horas, aunque el historial del día permanezca visible.
+
+La migración solo recupera el último reporte ya conocido de cada gimnasio anterior y conserva su fecha original si está dentro de la ventana de siete días. No construye un perfil horario ficticio. Los gimnasios nuevos empiezan con una sola hora registrada y acumulan el resto cuando el autor reporta.
+
+Se añadieron seis pruebas de historial: zona horaria y medianoche, último reporte por hora, datos faltantes, aislamiento entre autores y borrado, persistencia/retención y migración sin datos inventados. La integración PostgreSQL comprueba además que los reportes sobreviven a la reconexión y que las actualizaciones cambian el nivel de la hora correspondiente.

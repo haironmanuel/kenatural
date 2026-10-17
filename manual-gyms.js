@@ -1,4 +1,5 @@
 import { listingSubscription } from './subscriptions.js';
+import { reportHistory } from './hourly-reports.js';
 export const manualStatuses = ['quiet', 'medium', 'busy'];
 export function ownedGym(row) {
   return { ...manualGym(row), subscription: listingSubscription(row) };
@@ -10,6 +11,7 @@ export function manualGym(row) {
     observedAt: new Date(Number(row.updated_at)).toISOString(),
     source: 'Reporte manual de un usuario · Sin verificar',
     capacity: null, people: null, hourly: [],
+    reportHistory: reportHistory(row.hourly_reports, row.history_days),
   };
 }
 export function gymFields(body) {

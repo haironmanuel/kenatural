@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { TRIAL_MS } from './subscriptions.js';
+import { reportDays, reportTime } from './hourly-reports.js';
 
 const schema = `
 CREATE TABLE IF NOT EXISTS gymhora_users (
@@ -38,6 +39,14 @@ CREATE TABLE IF NOT EXISTS gymhora_listing_subscriptions (
   paid_until BIGINT NOT NULL,
   verified_payment_reference TEXT NOT NULL UNIQUE
 );
+CREATE TABLE IF NOT EXISTS gymhora_hourly_reports (
+  gym_id TEXT NOT NULL REFERENCES gymhora_manual_gyms(id) ON DELETE CASCADE,
+  report_date TEXT NOT NULL,
+  report_hour INTEGER NOT NULL CHECK (report_hour BETWEEN 0 AND 23),
+  status TEXT NOT NULL CHECK (status IN ('quiet', 'medium', 'busy')),
+  reported_at BIGINT NOT NULL,
+  PRIMARY KEY (gym_id, report_date, report_hour)
+);
 `;
 
 // Both adapters use bound parameters, and the same schema and account behavior.
@@ -67,21 +76,51 @@ export async function createStore({ databaseUrl = process.env.DATABASE_URL, sqli
   // Existing publishers receive one trial at migration. ON CONFLICT preserves its
   // original deadline across redeploys, edits, and deletion/recreation of gyms.
   const migrationTime = now();
+  async function recordReport(gymId, status, timestamp) {
+    const { date, hour } = reportTime(timestamp);
+    await query('INSERT INTO gymhora_hourly_reports (gym_id, report_date, report_hour, status, reported_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (gym_id, report_date, report_hour) DO UPDATE SET status = excluded.status, reported_at = excluded.reported_at WHERE excluded.reported_at >= gymhora_hourly_reports.reported_at', [gymId, date, hour, status, timestamp]);
+    await query('DELETE FROM gymhora_hourly_reports WHERE gym_id = $1 AND report_date < $2', [gymId, reportDays(now()).at(-1)]);
+  }
   try {
     await query('INSERT INTO gymhora_publisher_trials (owner_id, started_at, trial_ends_at) SELECT DISTINCT owner_id, CAST($1 AS BIGINT), CAST($2 AS BIGINT) FROM gymhora_manual_gyms WHERE 1 = 1 ON CONFLICT (owner_id) DO NOTHING', [migrationTime, migrationTime + TRIAL_MS]);
+    // Seed only the latest report already saved for a legacy gym, never a
+    // fabricated daily profile. Its original timestamp must remain intact.
+    const legacy = await query('SELECT g.id, g.status, g.updated_at FROM gymhora_manual_gyms g WHERE NOT EXISTS (SELECT 1 FROM gymhora_hourly_reports r WHERE r.gym_id = g.id)');
+    const earliest = reportDays(migrationTime).at(-1);
+    for (const gym of legacy) if (reportTime(gym.updated_at).date >= earliest) await recordReport(gym.id, gym.status, Number(gym.updated_at));
+    await query('DELETE FROM gymhora_hourly_reports WHERE report_date < $1', [earliest]);
   } catch (error) { await close(); throw error; }
   const ownedSQL = 'SELECT g.*, t.trial_ends_at, s.paid_until FROM gymhora_manual_gyms g LEFT JOIN gymhora_publisher_trials t ON t.owner_id = g.owner_id LEFT JOIN gymhora_listing_subscriptions s ON s.gym_id = g.id';
+  async function withHistory(rows) {
+    if (!rows.length) return rows;
+    const days = reportDays(now());
+    const placeholders = rows.map((_, i) => '$' + (i + 2)).join(',');
+    const reports = await query(`SELECT gym_id, report_date, report_hour, status, reported_at FROM gymhora_hourly_reports WHERE report_date >= $1 AND gym_id IN (${placeholders}) ORDER BY report_date, report_hour`, [days.at(-1), ...rows.map(r => r.id)]);
+    const grouped = new Map();
+    for (const report of reports) {
+      if (!grouped.has(report.gym_id)) grouped.set(report.gym_id, []);
+      grouped.get(report.gym_id).push(report);
+    }
+    return rows.map(row => ({ ...row, hourly_reports: grouped.get(row.id) || [], history_days: days }));
+  }
   return {
     close,
-    listPublicGyms: () => query(ownedSQL + ' WHERE COALESCE(t.trial_ends_at, 0) > $1 OR COALESCE(s.paid_until, 0) > $1 ORDER BY g.updated_at DESC, g.id LIMIT 1000', [now()]),
-    listOwnedGyms: id => query(ownedSQL + ' WHERE g.owner_id = $1 ORDER BY g.updated_at DESC, g.id', [id]),
+    listPublicGyms: async () => withHistory(await query(ownedSQL + ' WHERE COALESCE(t.trial_ends_at, 0) > $1 OR COALESCE(s.paid_until, 0) > $1 ORDER BY g.updated_at DESC, g.id LIMIT 1000', [now()])),
+    listOwnedGyms: async id => withHistory(await query(ownedSQL + ' WHERE g.owner_id = $1 ORDER BY g.updated_at DESC, g.id', [id])),
     createGym: async (id, ownerId, fields) => {
       const start = now();
       await query('INSERT INTO gymhora_publisher_trials (owner_id, started_at, trial_ends_at) VALUES ($1, $2, $3) ON CONFLICT (owner_id) DO NOTHING', [ownerId, start, start + TRIAL_MS]);
       const gym = (await query('INSERT INTO gymhora_manual_gyms (id, owner_id, name, city, area, status, updated_at) SELECT $1, $2, $3, $4, $5, $6, $7 WHERE (SELECT COUNT(*) FROM gymhora_manual_gyms WHERE owner_id = $2) < 20 RETURNING *', [id, ownerId, fields.name, fields.city, fields.area, fields.status, start]))[0];
-      return gym ? (await query(ownedSQL + ' WHERE g.id = $1 AND g.owner_id = $2', [id, ownerId]))[0] : undefined;
+      if (!gym) return undefined;
+      await recordReport(id, fields.status, start);
+      return (await withHistory(await query(ownedSQL + ' WHERE g.id = $1 AND g.owner_id = $2', [id, ownerId])))[0];
     },
-    updateGym: async (id, ownerId, fields) => (await query('UPDATE gymhora_manual_gyms SET name = $1, city = $2, area = $3, status = $4, updated_at = $5 WHERE id = $6 AND owner_id = $7 RETURNING *', [fields.name, fields.city, fields.area, fields.status, Date.now(), id, ownerId]))[0],
+    updateGym: async (id, ownerId, fields) => {
+      const timestamp = now();
+      const gym = (await query('UPDATE gymhora_manual_gyms SET name = $1, city = $2, area = $3, status = $4, updated_at = $5 WHERE id = $6 AND owner_id = $7 RETURNING *', [fields.name, fields.city, fields.area, fields.status, timestamp, id, ownerId]))[0];
+      if (gym) await recordReport(id, fields.status, timestamp);
+      return gym;
+    },
     deleteGym: async (id, ownerId) => (await query('DELETE FROM gymhora_manual_gyms WHERE id = $1 AND owner_id = $2 RETURNING id', [id, ownerId]))[0],
     userByEmail: async email => (await query('SELECT * FROM gymhora_users WHERE email = $1', [email]))[0],
     createUser: async user => (await query('INSERT INTO gymhora_users (id, email, name, password_hash) VALUES ($1, $2, $3, $4) RETURNING *', [user.id, user.email, user.name, user.password_hash]))[0],

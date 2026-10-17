@@ -1,4 +1,5 @@
 import { getAccount, accountRequest } from './account.js';
+import { manualChart, paintReportBars } from './hourly-chart.js';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const labels = { quiet: 'Tranquilo', medium: 'Moderado', busy: 'Muy concurrido' };
@@ -19,7 +20,8 @@ function subscriptionText(gym) {
   return 'Publicación pausada: terminó la prueba o el período pagado. Tus datos siguen guardados. Los pagos todavía no están habilitados.';
 }
 function list() {
-  $('#owned-gyms').innerHTML = owned.length ? owned.map(g => `<article class="owned-gym"><div><strong>${esc(g.name)}</strong><p>${esc(g.area)} · ${esc(g.city)}</p><span class="badge ${g.manualStatus}">${labels[g.manualStatus]}</span><small>Último reporte: ${esc(new Date(g.observedAt).toLocaleString('es-DO', {timeZone:'America/Santo_Domingo'}))}</small><p class="subscription-state ${g.subscription?.visible?'subscription-visible':'subscription-paused'}">${esc(subscriptionText(g))}</p></div><div class="owned-actions"><button type="button" data-edit-gym="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar y reportar</button><button type="button" data-delete-gym="${esc(g.id)}" aria-label="Eliminar ${esc(g.name)}">Eliminar</button></div></article>`).join('') : '<p class="gym-list-empty">Todavía no has añadido gimnasios. Empieza con el formulario de abajo.</p>';
+  $('#owned-gyms').innerHTML = owned.length ? owned.map(g => `<article class="owned-gym"><div><strong>${esc(g.name)}</strong><p>${esc(g.area)} · ${esc(g.city)}</p><span class="badge ${g.manualStatus}">${labels[g.manualStatus]}</span><small>Último reporte: ${esc(new Date(g.observedAt).toLocaleString('es-DO', {timeZone:'America/Santo_Domingo'}))}</small><p class="subscription-state ${g.subscription?.visible?'subscription-visible':'subscription-paused'}">${esc(subscriptionText(g))}</p>${manualChart(g)}</div><div class="owned-actions"><button type="button" data-edit-gym="${esc(g.id)}" aria-label="Editar ${esc(g.name)}">Editar y reportar</button><button type="button" data-delete-gym="${esc(g.id)}" aria-label="Eliminar ${esc(g.name)}">Eliminar</button></div></article>`).join('') : '<p class="gym-list-empty">Todavía no has añadido gimnasios. Empieza con el formulario de abajo.</p>';
+  paintReportBars($('#owned-gyms'));
 }
 async function reload() {
   const id = getAccount()?.id;
